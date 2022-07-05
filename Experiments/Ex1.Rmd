@@ -1,0 +1,89 @@
+---
+title: "Hometask 1"
+author: "Пронькин Алексей"
+date: "Friday, November 14, 2014"
+output: word_document
+---
+
+Loading Libs and Data:
+```{r}
+library(quantmod)
+library(ghyp)
+library(fGarch)
+library(fBasics)
+library(evd)
+library(ggplot2)
+#################################
+###     Based on lectures     ###
+### https://rpubs.com/iezepov ###
+#################################
+
+getSymbols("V",src='yahoo',from="2010-01-01")
+V <-as.numeric(V$V.Close); T <- length(V) - 1
+V <- V[2:(T+1)] / V[1:T] - 1
+```
+
+```{r}
+# Test-train split
+T1 <- 3*390; T2 <- T - T1
+# Train sliding-window Value at Risk (VaR)
+#
+VaR <- numeric()
+VaRP <- numeric()
+VaRG <- numeric()
+alpha=.05
+h <- 560 # sliding window
+for (i in (T1+1):(T1+T2)) 
+  {
+    h.V <- V[(i-h):(i-1)]
+    u <- sort(h.V)[0.95*h]
+  V.gpd.fit <- fpot(h.V,threshold=u,model="gpd",method="SANN")
+  V.fit <- stepAIC.ghyp(-h.V,dist=c("ghyp"), symmetric=NULL,silent=TRUE)
+  V.gfit <- garchFit(formula=~aparch(1,1),data=h.V,delta=2,
+                       include.delta=FALSE,leverage=TRUE,cond.dist="sged",
+                       shape=1.25,include.shape=FALSE,trace=FALSE)
+    beta <- V.gpd.fit$estimate[1]; xi <- V.gpd.fit$estimate[2]
+    Fu <- V.gpd.fit$pat 
+    sigma <- Mn.fit$estimate[2]
+    V.frc <- predict(V.gfit,n.ahead=1)
+  alphaP <- 0.05
+  VaR[i-T1] <- qghyp(alpha,object=V.fit$best.model)
+  VaRP[i-T1] <- u+beta/xi*(((1-alphaP)/Fu)^(-xi)-1)
+  VaRG[i-T1] <- V.frc[1,1]+V.frc[1,3]*qged(alpha,mean=0,sd=1,nu=V.gfit@fit$par["skew"])
+  i-T1
+  T-i+T1
+}
+```
+
+# Plots
+
+```{r}
+fact <- V[(T1+1):(T1+T2)]
+p1<-qplot(1:length(fact), fact, geom = "line", main="VaR for GHYP", xlab="Time in days", ylab="Yields", ylim=c(-0.2,0.2));
+p1+geom_line(aes(x=1:length(VaR), y=VaR), colour = "#3366FF")
+p2<-qplot(1:length(fact),fact,geom = "line",main="VaR for Pareto Optimal Model", xlab="Time in days", ylab="Доходность",ylim=c(-0.2,0.2));
+p2+geom_line(aes(x=1:length(VaRP),y=VaRP),colour = "#3366FF")
+p3<-qplot(1:length(fact), fact, geom = "line", main="VaR for  GARCH",xlab="Time in days", ylab="Dayly Yields", ylim=c(-0.2,0.2));
+p3+geom_line(aes(x=1:length(VaRG),y=VaRG), colour = "#FF6C91")
+```
+# K-tests
+```{r}
+# GHYP:
+K <- sum(fact<VaR); alpha0 <- K/T2
+S <- -2*log((1-alpha)^(T2-K)*alpha^K)+
+  2*log((1-alpha0)^(T2-K)*alpha0^K)
+p.value <- 1-pchisq(S,df=1)
+p.value
+# Pareto Optimal model
+K <- sum(fact<VaRP); alpha0 <- K/T2
+S <- -2*log((1-alpha)^(T2-K)*alpha^K)+
+  2*log((1-alpha0)^(T2-K)*alpha0^K)
+p.value <- 1-pchisq(S,df=1)
+p.value
+# GARCH
+K <- sum(fact<VaRG); alpha0 <- K/T2
+S <- -2*log((1-alpha)^(T2-K)*alpha^K)+
+  2*log((1-alpha0)^(T2-K)*alpha0^K)
+p.value <- 1-pchisq(S,df=1)
+p.value
+```
